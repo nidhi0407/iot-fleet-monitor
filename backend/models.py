@@ -37,3 +37,11 @@ class Alert(Base):
     reason = Column(String)  # e.g. "temperature_spike" or "device_offline"
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     resolved = Column(Boolean, default=False)
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    google_id = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    name = Column(String)
+    picture = Column(String)
