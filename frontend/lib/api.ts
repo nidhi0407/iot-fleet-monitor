@@ -1,52 +1,52 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+import axios from "axios";
+import { getToken } from "./auth";
+import { Device, Reading } from "@/types/device";
+import { Alert } from "@/types/alert";
 
-export type DeviceStatus = {
-  id: string;
-  location: string;
-  online: boolean;
-  last_seen: string | null;
-  latest_temperature_c: number | null;
-  latest_battery_pct: number | null;
-  latest_is_anomaly: boolean;
-};
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
-export type Reading = {
-  id: number;
-  device_id: string;
-  temperature_c: number;
-  battery_pct: number;
-  timestamp: string;
-  is_anomaly: boolean;
-};
+export const apiClient = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-export type Alert = {
-  id: number;
-  device_id: string;
-  reason: string;
-  created_at: string;
-  resolved: boolean;
-};
+// Interceptor to automatically attach Authorization header
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-export async function fetchDevices(): Promise<DeviceStatus[]> {
-  const res = await fetch(`${API_BASE}/devices`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch devices");
-  return res.json();
+export async function fetchDevices(): Promise<Device[]> {
+  const response = await apiClient.get<Device[]>("/devices");
+  return response.data;
 }
 
-export async function fetchReadings(deviceId: string, limit = 30): Promise<Reading[]> {
-  const res = await fetch(`${API_BASE}/devices/${deviceId}/readings?limit=${limit}`, {
-    cache: "no-store",
-  });
-  if (!res.ok) throw new Error("Failed to fetch readings");
-  return res.json();
+export async function fetchReadings(
+  deviceId: string,
+  limit: number = 30
+): Promise<Reading[]> {
+  const response = await apiClient.get<Reading[]>(
+    `/devices/${deviceId}/readings`,
+    {
+      params: { limit },
+    }
+  );
+  return response.data;
 }
 
 export async function fetchAlerts(): Promise<Alert[]> {
-  const res = await fetch(`${API_BASE}/alerts`, { cache: "no-store" });
-  if (!res.ok) throw new Error("Failed to fetch alerts");
-  return res.json();
+  const response = await apiClient.get<Alert[]>("/alerts");
+  return response.data;
 }
 
 export async function resolveAlert(alertId: number): Promise<void> {
-  await fetch(`${API_BASE}/alerts/${alertId}/resolve`, { method: "POST" });
+  await apiClient.post(`/alerts/${alertId}/resolve`);
 }

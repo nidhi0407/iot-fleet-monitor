@@ -1,6 +1,6 @@
+from urllib.parse import quote
 from fastapi import APIRouter, Request, Depends
 from sqlalchemy.orm import Session
-
 from fastapi.responses import RedirectResponse
 
 from oauth import oauth
@@ -19,7 +19,6 @@ async def login(request: Request):
 
 @router.get("/auth/callback", name="auth_callback")
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
-
     token = await oauth.google.authorize_access_token(request)
     google_user = token["userinfo"]
 
@@ -46,13 +45,10 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         }
     )
 
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.name,
-            "picture": user.picture
-        }
-    }
+    redirect_url = (
+        f"http://localhost:3000/?access_token={access_token}"
+        f"&name={quote(user.name or '')}"
+        f"&email={quote(user.email or '')}"
+        f"&picture={quote(user.picture or '')}"
+    )
+    return RedirectResponse(url=redirect_url)

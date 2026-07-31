@@ -1,14 +1,21 @@
 import "./globals.css";
+import { AuthProvider } from "@/context/AuthContext";
 
 export const metadata = {
-  title: "IoT Fleet Monitor",
-  description: "Live telemetry and anomaly monitoring for a simulated device fleet",
+  title: "PulseGrid — Industrial IoT Fleet Monitoring",
+  description: "Enterprise Real-Time Telemetry & Anomaly Diagnostics Platform",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className="dark">
+      <body className="bg-[#09090B] text-[#FAFAFA] antialiased">
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
