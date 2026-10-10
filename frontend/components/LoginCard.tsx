@@ -1,22 +1,12 @@
 "use client";
 
 import React from "react";
-import { Activity, ArrowRight } from "lucide-react";
-import { useAuth } from "@/context/AuthContext";
+import { Activity } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 
 export default function LoginCard() {
-  const { login } = useAuth();
-
   const handleGoogleLogin = () => {
-    window.location.href = "http://127.0.0.1:8000/login";
-  };
-
-  const handleDemoLogin = () => {
-    // Quick demo login bypass to inspect dashboard directly
-    login("demo-jwt-token-pulsegrid-2026", {
-      name: "Fleet Engineer",
-      email: "engineer@pulsegrid.io",
-    });
+    window.location.href = `${API_BASE}/login`;
   };
 
   return (
@@ -75,21 +65,11 @@ export default function LoginCard() {
           </svg>
           <span>Sign in with Google</span>
         </button>
-
-        {/* Demo Direct Access Button */}
-        <button
-          onClick={handleDemoLogin}
-          className="w-full py-3 px-5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 font-medium text-xs transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer group"
-        >
-          <span>Quick Demo / Direct Dashboard Access</span>
-          <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-        </button>
       </div>
 
       {/* Footer indicator */}
       <div className="mt-8 pt-6 border-t border-[#27272A]/60 flex items-center justify-center gap-2 text-xs text-[#A1A1AA]">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span>Backend Connected • http://127.0.0.1:8000</span>
+        <span>Backend • {API_BASE}</span>
       </div>
     </div>
   );

@@ -8,7 +8,7 @@ interview. Upgrade to something statistical (z-score) or a real model
 (isolation forest) later once this works end-to-end.
 """
 
-from statistics import mean, pstdev
+from statistics import mean
 
 # A reading is flagged if it's this many degrees away from the device's
 # own recent average -- so each device is judged against its own normal
@@ -32,6 +32,3 @@ def is_temperature_anomaly(recent_temps: list[float], new_temp: float) -> bool:
     baseline = mean(recent_temps[-ROLLING_WINDOW:])
     return abs(new_temp - baseline) > DEVIATION_THRESHOLD_C
 
-
-def seconds_since(last_seen, now) -> float:
-    return (now - last_seen).total_seconds()

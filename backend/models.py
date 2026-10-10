@@ -1,9 +1,8 @@
-from datetime import datetime, timezone
-
 from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from database import Base
+from timeutil import utc_now
 
 
 class Device(Base):
@@ -35,8 +34,10 @@ class Alert(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     device_id = Column(String, ForeignKey("devices.id"))
     reason = Column(String)  # e.g. "temperature_spike" or "device_offline"
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=utc_now)
     resolved = Column(Boolean, default=False)
+
+
 class User(Base):
     __tablename__ = "users"
 

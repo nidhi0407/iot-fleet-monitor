@@ -3,7 +3,7 @@ import { getToken } from "./auth";
 import { Device, Reading } from "@/types/device";
 import { Alert } from "@/types/alert";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://127.0.0.1:8000";
 
 export const apiClient = axios.create({
   baseURL: API_BASE,

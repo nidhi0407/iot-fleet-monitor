@@ -13,6 +13,7 @@ to start one with Docker in about 10 seconds).
 """
 
 import json
+import os
 import random
 import time
 from datetime import datetime, timezone
@@ -21,8 +22,8 @@ import paho.mqtt.client as mqtt
 
 # ---- Config ---------------------------------------------------------------
 
-BROKER_HOST = "localhost"
-BROKER_PORT = 1883
+BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+BROKER_PORT = int(os.getenv("MQTT_BROKER_PORT", "1883"))
 PUBLISH_INTERVAL_SECONDS = 3
 
 DEVICES = [

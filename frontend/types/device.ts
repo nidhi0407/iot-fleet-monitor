@@ -12,7 +12,7 @@ export interface Reading {
   id: number;
   device_id: string;
   temperature_c: number;
-  battery_pct: number;
+  battery_pct: number | null;
   timestamp: string;
   is_anomaly: boolean;
 }

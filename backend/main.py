@@ -6,15 +6,14 @@ main.py
   GET  /alerts                   -> recent anomaly alerts
   POST /alerts/{id}/resolve      -> mark an alert as handled
 
-Spins up a background live telemetry generator loop so devices update in real-time
-(online status, moving temperature charts, live anomaly alerts).
+On startup the app also starts the MQTT listener (which stores incoming
+readings) and a background task that alerts when a device goes silent.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-import random
 import os
+import secrets
+from contextlib import asynccontextmanager
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -23,90 +22,49 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 
-from anomaly import seconds_since
-from database import Base, SessionLocal, engine, get_db
-from models import Alert, Device, Reading, User
-from auth_routes import router as auth_router
 from auth import get_current_user
+from auth_routes import router as auth_router
+from database import Base, SessionLocal, engine, get_db
+from models import Alert, Device, Reading
+from mqtt_listener import start_mqtt_listener, stop_mqtt_listener
+from offline import OFFLINE_CHECK_INTERVAL_SECONDS, check_offline_devices, is_online
+from timeutil import iso_utc, utc_now
 
 load_dotenv()
 
-OFFLINE_THRESHOLD_SECONDS = 25
-
-SIMULATED_DEVICES = [
-    {"id": "device-01", "location": "Warehouse A - Shelf 1", "base_temp": 23.5},
-    {"id": "device-02", "location": "Warehouse A - Shelf 2", "base_temp": 24.8},
-    {"id": "device-03", "location": "Warehouse B - Dock", "base_temp": 27.2},
-    {"id": "device-04", "location": "Warehouse B - Cold Storage", "base_temp": 4.5},
-    {"id": "device-05", "location": "Warehouse C - Loading Bay", "base_temp": 26.1},
+# Comma-separated list of sites allowed to call this API from a browser.
+FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
+    ).split(",")
+    if origin.strip()
 ]
 
 
-async def background_telemetry_generator():
-    """Background task generating live sensor telemetry every 3 seconds."""
+async def offline_watcher():
+    """Background task: every few seconds, alert on devices that have gone silent."""
     while True:
+        await asyncio.sleep(OFFLINE_CHECK_INTERVAL_SECONDS)
+        db = SessionLocal()
         try:
-            db = SessionLocal()
-            now = datetime.now(timezone.utc)
-
-            for item in SIMULATED_DEVICES:
-                device_id = item["id"]
-                base_temp = item["base_temp"]
-
-                # Upsert device
-                device = db.get(Device, device_id)
-                if device is None:
-                    device = Device(id=device_id, location=item["location"])
-                    db.add(device)
-
-                # Update last seen timestamp
-                device.last_seen = now
-
-                # Generate realistic temp reading
-                temp = base_temp + random.uniform(-0.8, 0.8)
-
-                # Faulty device-03 occasional spike
-                is_anomaly_triggered = False
-                if device_id == "device-03" and random.random() < 0.12:
-                    temp += random.uniform(12.0, 25.0)
-                    is_anomaly_triggered = True
-
-                temp_rounded = round(temp, 1)
-
-                reading = Reading(
-                    device_id=device_id,
-                    temperature_c=temp_rounded,
-                    battery_pct=round(random.uniform(70.0, 99.0), 1),
-                    timestamp=now,
-                    is_anomaly=is_anomaly_triggered,
-                )
-                db.add(reading)
-
-                if is_anomaly_triggered:
-                    db.add(
-                        Alert(
-                            device_id=device_id,
-                            reason="temperature_spike",
-                            created_at=now,
-                            resolved=False,
-                        )
-                    )
-
-            db.commit()
+            check_offline_devices(db, utc_now())
+        except Exception as err:  # noqa: BLE001 - log and keep checking
+            db.rollback()
+            print(f"Offline check error: {err}")
+        finally:
             db.close()
-        except Exception as err:
-            print(f"Telemetry generator error: {err}")
-
-        await asyncio.sleep(3)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # Start live telemetry simulation task
-    task = asyncio.create_task(background_telemetry_generator())
+    # Readings arrive only through MQTT: from the simulator or a real device.
+    mqtt_client = start_mqtt_listener()
+    watcher = asyncio.create_task(offline_watcher())
     yield
-    task.cancel()
+    watcher.cancel()
+    stop_mqtt_listener(mqtt_client)
 
 
 app = FastAPI(
@@ -116,14 +74,16 @@ app = FastAPI(
 
 app.include_router(auth_router)
 
+# The session cookie is only used during the Google sign-in redirect, so a
+# random key per start is safe when SESSION_SECRET_KEY is not set.
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET_KEY", "fallback-secret-key-12345")
+    secret_key=os.getenv("SESSION_SECRET_KEY") or secrets.token_hex(32),
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,8 +95,8 @@ def list_devices(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    devices = db.query(Device).all()
-    now = datetime.now(timezone.utc)
+    devices = db.query(Device).order_by(Device.id).all()
+    now = utc_now()
     result = []
 
     for d in devices:
@@ -147,23 +107,12 @@ def list_devices(
             .first()
         )
 
-        last_seen = (
-            d.last_seen.replace(tzinfo=timezone.utc)
-            if d.last_seen and d.last_seen.tzinfo is None
-            else d.last_seen
-        )
-
-        is_online = (
-            last_seen is not None
-            and seconds_since(last_seen, now) < OFFLINE_THRESHOLD_SECONDS
-        )
-
         result.append(
             {
                 "id": d.id,
                 "location": d.location,
-                "online": is_online,
-                "last_seen": d.last_seen.isoformat() if d.last_seen else None,
+                "online": is_online(d.last_seen, now),
+                "last_seen": iso_utc(d.last_seen),
                 "latest_temperature_c": latest.temperature_c if latest else None,
                 "latest_battery_pct": latest.battery_pct if latest else None,
                 "latest_is_anomaly": latest.is_anomaly if latest else False,
@@ -201,7 +150,7 @@ def device_readings(
                 "device_id": r.device_id,
                 "temperature_c": r.temperature_c,
                 "battery_pct": r.battery_pct,
-                "timestamp": r.timestamp.isoformat() if r.timestamp else "",
+                "timestamp": iso_utc(r.timestamp) or "",
                 "is_anomaly": r.is_anomaly,
             }
         )
@@ -228,7 +177,7 @@ def list_alerts(
                 "id": a.id,
                 "device_id": a.device_id,
                 "reason": a.reason,
-                "created_at": a.created_at.isoformat() if a.created_at else "",
+                "created_at": iso_utc(a.created_at) or "",
                 "resolved": a.resolved,
             }
         )
